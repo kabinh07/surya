@@ -20,11 +20,6 @@ class CustomTrainer(Trainer):
             encoder_model = model.encoder
             decoder_model = model.decoder
             text_encoder_model = model.text_encoder
-        print("========")
-        print(decoder_model.dtype, decoder_model.device)
-        # print(inputs['pixel_values'].dtype)
-        # for name, param in encoder_model.named_parameters():
-        #     print(f"{name}: {param.dtype}")
         pixels = inputs['pixel_values'].to(torch.float16)
         encoder_hidden_states = encoder_model(pixel_values=pixels).last_hidden_state
         text_encoder_input_ids = torch.arange(
@@ -88,7 +83,6 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     processor = recognition_model.processor()
     model = recognition_model.model()
-    print(model.dtype, model.device)
     collate_fn = CustomDataCollatorWithPadding(tokenizer=processor.tokenizer, pad_to_multiple_of=8, return_tensors = 'pt')
     df = pd.read_csv(os.path.join(os.path.abspath(''), "data/labels.csv"))
     train_df = df.iloc[:6]
