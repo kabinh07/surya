@@ -1,0 +1,24 @@
+services:
+  app:
+    container_name: surya
+    build: .
+    image: surya:latest
+    volumes:
+      - ./recognition_model:/app/recognition_model
+      - /mnt/data/nid_dataset_ocr:/app/data
+      - ./experiment:/app/experiment
+      - ./train.py:/app/train.py
+      - ./surya:/app/surya
+    # command: torchrun --nproc-per-node=4 --master-addr="localhost" --master-port=12355 train.py
+    shm_size: 26G
+    command: python3 train.py
+    runtime: nvidia
+    environment:
+      - OMP_NUM_THREADS=4
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
+

@@ -38,7 +38,6 @@ class SuryaProcessor(S3DownloaderMixin, DonutProcessor):
 
         if text is not None:
             encodings = self.tokenizer(text, langs, **kwargs)
-
         if text is None:
             return inputs
         elif images is None:
@@ -46,4 +45,5 @@ class SuryaProcessor(S3DownloaderMixin, DonutProcessor):
         else:
             inputs["labels"] = encodings["input_ids"]
             inputs["langs"] = encodings["langs"]
+            inputs["attention_mask"]=encodings["attention_mask"]
             return inputs

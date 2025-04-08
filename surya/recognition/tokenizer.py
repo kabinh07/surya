@@ -53,12 +53,79 @@ def _tokenize(text: str, langs: List[str] | None, eos_token_id: int = 1, add_eos
     return tokens, lang_list
 
 
+# class Byt5LangTokenizer(ByT5Tokenizer):
+#     def __init__(self,
+#         eos_token="</s>",
+#         unk_token="<unk>",
+#         pad_token="<pad>",
+#         model_max_length=None,
+#         **kwargs,
+#     ):
+#         self.pad_token = pad_token
+#         self.eos_token = eos_token
+#         self.unk_token = unk_token
+#         self.bos_token = eos_token
+#         self.offset = TOKEN_OFFSET
+
+#         self.pad_id = 0
+#         self.eos_id = 1
+#         self.unk_id = 2
+
+#         self.model_max_length = model_max_length
+#         self.special_token_start = TOKEN_OFFSET + TOTAL_TOKENS
+
+#         super().__init__()
+
+#     def __call__(self, texts: List[str] | str, langs: List[List[str]] | List[str] | None = None, pad_token_id: int = 0, **kwargs):
+#         tokenized = []
+#         all_langs = []
+
+#         is_list = True
+#         # Convert to list of lists format
+#         if isinstance(texts, str):
+#             texts = [texts]
+#             is_list = False
+
+#         if langs is None:
+#             langs = [None] * len(texts)
+
+#         if isinstance(langs[0], str):
+#             langs = [langs]
+
+#         assert len(langs) == len(texts)
+
+#         for text, lang in zip(texts, langs):
+#             tokens, lang_list = _tokenize(text, lang)
+#             tokenized.append(tokens)
+#             all_langs.append(lang_list)
+
+#         # Convert back to flat format
+#         if not is_list:
+#             tokenized = tokenized[0]
+#             all_langs = all_langs[0]
+
+#         return {"input_ids": tokenized, "langs": all_langs}
+
+#     def decode(
+#         self,
+#         token_ids: Union[int, List[int], "np.ndarray", "torch.Tensor", "tf.Tensor"],
+#         skip_special_tokens: bool = False,
+#         clean_up_tokenization_spaces: bool = None,
+#         **kwargs,
+#     ) -> str:
+#         if isinstance(token_ids, (np.ndarray, torch.Tensor)):
+#             token_ids = token_ids.tolist()
+
+#         token_ids = [t for t in token_ids if TOKEN_OFFSET <= t < self.special_token_start]
+#         token_ids = [t - TOKEN_OFFSET for t in token_ids]
+#         text = utf16_numbers_to_text(token_ids)
+#         return text
 class Byt5LangTokenizer(ByT5Tokenizer):
     def __init__(self,
         eos_token="</s>",
         unk_token="<unk>",
         pad_token="<pad>",
-        model_max_length=None,
+        model_max_length=None,  # Define the maximum length for padding
         **kwargs,
     ):
         self.pad_token = pad_token
@@ -79,6 +146,7 @@ class Byt5LangTokenizer(ByT5Tokenizer):
     def __call__(self, texts: List[str] | str, langs: List[List[str]] | List[str] | None = None, pad_token_id: int = 0, **kwargs):
         tokenized = []
         all_langs = []
+        attention_masks = []
 
         is_list = True
         # Convert to list of lists format
@@ -96,15 +164,32 @@ class Byt5LangTokenizer(ByT5Tokenizer):
 
         for text, lang in zip(texts, langs):
             tokens, lang_list = _tokenize(text, lang)
+            
+            # Padding to fixed length (model_max_length)
+            if self.model_max_length is not None:
+                tokens = tokens[:self.model_max_length]  # Truncate if necessary
+                attention_mask = [1] * len(tokens)  # 1 for actual tokens
+                padding_length = self.model_max_length - len(tokens)
+                tokens.extend([self.pad_id] * padding_length)  # Pad with pad_token_id
+                attention_mask.extend([0] * padding_length)  # Pad attention mask with 0s
+            else:
+                attention_mask = [1] * len(tokens)  # No padding if no model_max_length specified
+
             tokenized.append(tokens)
             all_langs.append(lang_list)
+            attention_masks.append(attention_mask)
 
         # Convert back to flat format
         if not is_list:
             tokenized = tokenized[0]
             all_langs = all_langs[0]
+            attention_masks = attention_masks[0]
 
-        return {"input_ids": tokenized, "langs": all_langs}
+        return {
+            "input_ids": tokenized,
+            "langs": all_langs,
+            "attention_mask": attention_masks,  # Return attention mask
+        }
 
     def decode(
         self,

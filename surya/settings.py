@@ -67,7 +67,7 @@ class Settings(BaseSettings):
 
     # Text recognition
     RECOGNITION_MODEL_CHECKPOINT: str = "s3://text_recognition/2025_02_18"
-    RECOGNITION_MAX_TOKENS: int = 175
+    RECOGNITION_MAX_TOKENS: int = 64
     RECOGNITION_BATCH_SIZE: Optional[int] = None # Defaults to 8 for CPU/MPS, 256 otherwise
     RECOGNITION_IMAGE_SIZE: Dict = {"height": 256, "width": 896}
     RECOGNITION_RENDER_FONTS: Dict[str, str] = {
@@ -148,7 +148,7 @@ class Settings(BaseSettings):
             return torch.float32
         if self.TORCH_DEVICE_MODEL == "xla":
             return torch.bfloat16
-        return torch.float16
+        return torch.float32
 
     @computed_field
     def INFERENCE_MODE(self) -> Callable:

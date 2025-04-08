@@ -1,0 +1,12 @@
+transformers
+torch
+pydantic
+pydantic-settings
+python-dotenv
+pillow
+filetype
+opencv-python-headless
+platformdirs
+pandas
+accelerate
+tensorboardX

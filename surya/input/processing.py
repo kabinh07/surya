@@ -2,7 +2,6 @@ from typing import List
 
 import cv2
 import numpy as np
-import pypdfium2
 from PIL import Image
 from surya.settings import settings
 
@@ -16,7 +15,8 @@ def convert_if_not_rgb(images: List[Image.Image]) -> List[Image.Image]:
     return new_images
 
 def open_pdf(pdf_filepath):
-    return pypdfium2.PdfDocument(pdf_filepath)
+    pass
+    # return pypdfium2.PdfDocument(pdf_filepath)
 
 
 def get_page_images(doc, indices: List, dpi=settings.IMAGE_DPI):

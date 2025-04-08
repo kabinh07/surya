@@ -3,7 +3,6 @@ name = "surya-ocr"
 version = "0.12.1"
 description = "OCR, layout, reading order, and table recognition in 90+ languages"
 authors = ["Vik Paruchuri <vik.paruchuri@gmail.com>"]
-readme = "README.md"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/VikParuchuri/surya"
 keywords = ["ocr", "pdf", "text detection", "text recognition", "tables"]
