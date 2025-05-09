@@ -14,8 +14,13 @@ class SuryaOCRConfig(S3DownloaderMixin, PretrainedConfig):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        encoder_config = kwargs.pop("encoder")
-        decoder_config = kwargs.pop("decoder")
+        if 'encoder' not in kwargs or 'decoder' not in kwargs:
+            config = SuryaOCRConfig.from_pretrained('./recognition_model')
+            encoder_config = config.encoder
+            decoder_config = config.decoder
+        else:
+            encoder_config = kwargs.pop("encoder")
+            decoder_config = kwargs.pop("decoder")
 
         self.encoder = encoder_config
         self.decoder = decoder_config

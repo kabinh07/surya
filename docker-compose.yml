@@ -8,10 +8,13 @@ services:
       - /mnt/data/nid_dataset_ocr:/app/data
       - ./experiment:/app/experiment
       - ./train.py:/app/train.py
+      - ./test.py:/app/test.py
       - ./surya:/app/surya
+      - ./test_data:/app/test_data
+      - ./models:/app/models
     # command: torchrun --nproc-per-node=4 --master-addr="localhost" --master-port=12355 train.py
     shm_size: 26G
-    command: python3 train.py
+    command: python3 test.py
     runtime: nvidia
     environment:
       - OMP_NUM_THREADS=4

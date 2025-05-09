@@ -255,6 +255,10 @@ class RecognitionPredictor(BasePredictor):
             device_pad_token = torch.tensor(self.processor.tokenizer.pad_token_id, device=self.model.device)
 
             with settings.INFERENCE_MODE():
+                dummy_input = batch_pixel_values[0].unsqueeze(0)
+                print(f"==========={dummy_input.shape}")
+                # traced_model = torch.jit.trace(self.model.encoder, dummy_input, strict = False)
+                # traced_model.save("models/encoder.pt")
                 encoder_hidden_states = self.model.encoder(pixel_values=batch_pixel_values).last_hidden_state
 
                 text_encoder_input_ids = torch.arange(
@@ -262,7 +266,7 @@ class RecognitionPredictor(BasePredictor):
                     device=encoder_hidden_states.device,
                     dtype=torch.long
                 ).unsqueeze(0).expand(encoder_hidden_states.size(0), -1)
-
+                print(f"==========={text_encoder_input_ids.shape}")
                 encoder_text_hidden_states = self.model.text_encoder(
                     input_ids=text_encoder_input_ids,
                     cache_position=None,

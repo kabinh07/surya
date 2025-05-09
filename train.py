@@ -35,18 +35,8 @@ class CustomTrainer(Trainer):
             pixels,
             1
         )
-
+        print(batch_pixel_values.shape, batch_decoder_input.shape)
         encoder_hidden_states = encoder_model(pixel_values=pixels).last_hidden_state
-        # encoder_hidden_states.retain_grad()
-        # token_count = 0
-        # inference_token_count = batch_decoder_input.shape[-1]
-        # decoder_position_ids = torch.ones_like(batch_decoder_input[0, :], dtype=torch.int64,
-        #                                            device=self.model.device).cumsum(0) - 1
-        
-        # sequence_scores = torch.zeros(batch_pixel_values.shape[0], dtype=torch.bool, device=self.model.device).unsqueeze(1)
-        # all_done = torch.zeros(batch_pixel_values.shape[0], dtype=torch.bool, device=self.model.device)
-        # batch_predictions = torch.zeros(batch_pixel_values.shape[0], dtype=torch.int64, device=self.model.device).unsqueeze(1)
-        # device_pad_token = torch.tensor(self.processor.tokenizer.pad_token_id, device=self.model.device)
         encoder_hidden_states = encoder_model(pixel_values=batch_pixel_values).last_hidden_state
         text_encoder_input_ids = torch.arange(
                     text_encoder_model.config.query_token_count,
@@ -62,37 +52,14 @@ class CustomTrainer(Trainer):
                     use_cache=False
                 ).hidden_states
         outputs = decoder_model(
-                        input_ids=batch_decoder_input,
+                        input_ids=inputs['batch_decoder_input'],
                         encoder_hidden_states=encoder_text_hidden_states,
-                        
                     )
-        return outputs,batch_decoder_input
+        
+        return outputs,inputs['batch_decoder_input']
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        # Extract sub-models
         
-        # Prepare input for text encoder
-        # text_encoder_input_ids = torch.arange(
-        #     text_encoder_model.config.query_token_count,
-        #     device=encoder_hidden_states.device,
-        #     dtype=torch.long
-        # ).unsqueeze(0).expand(encoder_hidden_states.size(0), -1)
-
-        # Forward pass through text encoder
-        # encoder_text_hidden_states = text_encoder_model(
-        #     input_ids=text_encoder_input_ids,
-        #     cache_position=None,
-        #     attention_mask=None,
-        #     encoder_hidden_states=encoder_hidden_states,
-        #     encoder_attention_mask=None,
-        #     use_cache=False
-        # ).hidden_states
-        # encoder_text_hidden_states.retain_grad()
         
-        # Forward pass through decoder
-        # outputs = decoder_model(
-        #     input_ids=inputs['decoder_input_ids'],
-        #     encoder_hidden_states=encoder_text_hidden_states,
-        # )
         outputs,batch_decoder_input = self._gen_output(model, inputs)
         
         logits = outputs["logits"]
@@ -151,29 +118,12 @@ class CustomTrainer(Trainer):
         model.eval()
         with torch.no_grad():
             inputs = self._prepare_inputs(inputs)
-
-            # Forward pass
-            # outputs = model(**inputs)
-            # logits = outputs["logits"]
-
-            # Compute loss if required
             if prediction_loss_only:
                 loss = self.compute_loss(model, inputs)
                 return loss,None,None
-
-            # Custom evaluation logic (e.g., accuracy, metrics)
-            # outputs, batch_decoder_input = self._gen_output(model, inputs)
-            # logits = outputs["logits"]
-            # predictions = torch.argmax(logits, dim=-1)
-            # labels = batch_decoder_input
-            # Check for NaN or Inf in logits    
-
-            # Example: Compute accuracy
             loss,outputs = self._gen_output(model, inputs)
             logits = outputs["logits"]
             labels = outputs["batch_decoder_input"]
-            # predictions = torch.argmax(logits[:, -1], dim=-1)
-            # accuracy = (predictions == labels).float().mean().item()
 
             return  loss,  logits, labels
 
@@ -224,66 +174,86 @@ class OCRDataset(Dataset):
             max_length=100  # Adjust this based on your model's expected input length
         )
 
+        print(embeddings['pixel_values'].shape)
+        print(embeddings["langs"])
+
         return {
             "pixel_values": embeddings['pixel_values'].squeeze(0).to(settings.MODEL_DTYPE),
             "input_ids": torch.tensor(embeddings['labels'], dtype=torch.long).squeeze(0),
             "langs": embeddings["langs"],
             "attention_mask": embeddings["attention_mask"]
         }
+    
+from PIL import Image
+def convert_model(model, input_shape):
+    
+    image = Image.open("test_data/748_back.png")
+    pixels = model.processor()(image)
+    batch_langs = [65555, 65546]
+    batch_pixel_values, batch_decoder_input = model.prepare_input(
+        [batch_langs],
+        pixels,
+        1
+    )
+    print(batch_pixel_values)
+    # dummy_input = torch.randn(input_shape[0], input_shape[1], input_shape[2], input_shape[3]).to(device)
+    # traced_model = torch.jit.trace(model, dummy_input)
+    # traced_model.save("recognizer_surya_jit.pt")
 
 if __name__ == "__main__":
     recognition_model = RecognitionModelLoader("./recognition_model")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     processor = recognition_model.processor()
     model = recognition_model.model()
-    # model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
-    collate_fn = CustomDataCollatorWithPadding(tokenizer=processor.tokenizer, pad_to_multiple_of=8, return_tensors = 'pt')
-    df = pd.read_csv(os.path.join(os.path.abspath(''), "data/labels.csv"))
-    # df=df[:20000]
-    # Define split sizes
-    train_size = int(0.8 * len(df))  # 80% training
-    val_size =  len(df)-train_size    # 20% validation
-    df.reset_index(inplace = True, drop = True)
-    data = OCRDataset(dataframe=df, processor=processor)
-    train_data,test_data=random_split(data,[train_size,val_size])
-    print(f"TRAINING DATA LENGTH LENGHT: {len(train_data)}\nTEST DATA LENGTH: {len(test_data)}")
+    convert_model(recognition_model, [4, 3, 256, 896])
+    # # model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
+    # collate_fn = CustomDataCollatorWithPadding(tokenizer=processor.tokenizer, pad_to_multiple_of=8, return_tensors = 'pt')
+    # df = pd.read_csv(os.path.join(os.path.abspath(''), "data/labels.csv"))
+    # df=df[:10000]
+    # # Define split sizes
+    # train_size = int(0.8 * len(df))  # 80% training
+    # val_size =  len(df) - train_size    # 20% validation
+    # df.reset_index(inplace = True, drop = True)
+    # data = OCRDataset(dataframe=df, processor=processor)
+    # train_data,test_data = random_split(data,[train_size,val_size])
+    # print(f"TRAINING DATA LENGTH LENGHT: {len(train_data)}\nTEST DATA LENGTH: {len(test_data)}")
     
 
-    training_args = TrainingArguments(
-        output_dir="./experiment",
-        per_device_train_batch_size=1,
-        per_device_eval_batch_size=1,
-        eval_strategy="steps",
-        save_strategy="steps",
-        save_steps=500,
-        eval_steps=10000,
-        logging_dir="./logs",
-        logging_steps=100,
-        learning_rate=5e-5,
-        weight_decay=0.01,
-        num_train_epochs=100,
-        save_total_limit=1,
-        fp16=False,  # Enable mixed precision training
-        report_to="tensorboard",
-        warmup_steps=500,
-        warmup_ratio=0.03,
-        gradient_accumulation_steps=2,
-        ddp_find_unused_parameters=True,
-        remove_unused_columns=False,
-        gradient_checkpointing=True,  # Enable gradient checkpointing
-        max_grad_norm=1.0,  # Add gradient clipping
-        # bf16=torch.cuda.get_device_capability(torch.cuda.current_device())[0] >= 8,  # if >= 8 ==> brain float 16 available or set to True if you always want fp32
-    )
-    ignore_keys_for_eval=["labels","input_ids"]
-    trainer = CustomTrainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_data,
-        eval_dataset=test_data,
-        data_collator=collate_fn,
-        preprocess_logits_for_metrics=None,
-    )
-    trainer.train(
-    ignore_keys_for_eval=ignore_keys_for_eval,
-    )
-    # torchrun --nproc-per-node=4 --master-addr="localhost" --master-port=12355 train.py%
+    # training_args = TrainingArguments(
+    #     output_dir="./experiment",
+    #     per_device_train_batch_size=1,
+    #     per_device_eval_batch_size=1,
+    #     eval_strategy="steps",
+    #     save_strategy="steps",
+    #     save_steps=1000,
+    #     eval_steps=10,
+    #     logging_dir="./logs",
+    #     logging_steps=100,
+    #     learning_rate=5e-5,
+    #     weight_decay=0.01,
+    #     num_train_epochs=100,
+    #     save_total_limit=1,
+    #     fp16=False,  # Enable mixed precision training
+    #     report_to="tensorboard",
+    #     warmup_steps=500,
+    #     warmup_ratio=0.03,
+    #     gradient_accumulation_steps=2,
+    #     ddp_find_unused_parameters=True,
+    #     remove_unused_columns=False,
+    #     gradient_checkpointing=True,  # Enable gradient checkpointing
+    #     max_grad_norm=1.0,  # Add gradient clipping
+    #     # bf16=torch.cuda.get_device_capability(torch.cuda.current_device())[0] >= 8,  # if >= 8 ==> brain float 16 available or set to True if you always want fp32
+    # )
+    # ignore_keys_for_eval=["labels","input_ids"]
+    # trainer = CustomTrainer(
+    #     model=model,
+    #     args=training_args,
+    #     train_dataset=train_data,
+    #     eval_dataset=test_data,
+    #     data_collator=collate_fn,
+    #     preprocess_logits_for_metrics=None,
+    # )
+    # trainer.train(
+    #     ignore_keys_for_eval=ignore_keys_for_eval,
+    # )
+    # # torchrun --nproc-per-node=4 --master-addr="localhost" --master-port=12355 train.py%
