@@ -14,7 +14,8 @@ services:
       - ./models:/app/models
     # command: torchrun --nproc-per-node=4 --master-addr="localhost" --master-port=12355 train.py
     shm_size: 26G
-    command: python3 test.py
+    command: bash
+    stdin_open: true
     runtime: nvidia
     environment:
       - OMP_NUM_THREADS=4

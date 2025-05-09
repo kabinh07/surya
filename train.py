@@ -205,55 +205,55 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     processor = recognition_model.processor()
     model = recognition_model.model()
-    convert_model(recognition_model, [4, 3, 256, 896])
-    # # model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
-    # collate_fn = CustomDataCollatorWithPadding(tokenizer=processor.tokenizer, pad_to_multiple_of=8, return_tensors = 'pt')
-    # df = pd.read_csv(os.path.join(os.path.abspath(''), "data/labels.csv"))
-    # df=df[:10000]
-    # # Define split sizes
-    # train_size = int(0.8 * len(df))  # 80% training
-    # val_size =  len(df) - train_size    # 20% validation
-    # df.reset_index(inplace = True, drop = True)
-    # data = OCRDataset(dataframe=df, processor=processor)
-    # train_data,test_data = random_split(data,[train_size,val_size])
-    # print(f"TRAINING DATA LENGTH LENGHT: {len(train_data)}\nTEST DATA LENGTH: {len(test_data)}")
+    # convert_model(recognition_model, [4, 3, 256, 896])
+    # model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
+    collate_fn = CustomDataCollatorWithPadding(tokenizer=processor.tokenizer, pad_to_multiple_of=8, return_tensors = 'pt')
+    df = pd.read_csv(os.path.join(os.path.abspath(''), "data/labels.csv"))
+    df=df[:10000]
+    # Define split sizes
+    train_size = int(0.8 * len(df))  # 80% training
+    val_size =  len(df) - train_size    # 20% validation
+    df.reset_index(inplace = True, drop = True)
+    data = OCRDataset(dataframe=df, processor=processor)
+    train_data,test_data = random_split(data,[train_size,val_size])
+    print(f"TRAINING DATA LENGTH LENGHT: {len(train_data)}\nTEST DATA LENGTH: {len(test_data)}")
     
 
-    # training_args = TrainingArguments(
-    #     output_dir="./experiment",
-    #     per_device_train_batch_size=1,
-    #     per_device_eval_batch_size=1,
-    #     eval_strategy="steps",
-    #     save_strategy="steps",
-    #     save_steps=1000,
-    #     eval_steps=10,
-    #     logging_dir="./logs",
-    #     logging_steps=100,
-    #     learning_rate=5e-5,
-    #     weight_decay=0.01,
-    #     num_train_epochs=100,
-    #     save_total_limit=1,
-    #     fp16=False,  # Enable mixed precision training
-    #     report_to="tensorboard",
-    #     warmup_steps=500,
-    #     warmup_ratio=0.03,
-    #     gradient_accumulation_steps=2,
-    #     ddp_find_unused_parameters=True,
-    #     remove_unused_columns=False,
-    #     gradient_checkpointing=True,  # Enable gradient checkpointing
-    #     max_grad_norm=1.0,  # Add gradient clipping
-    #     # bf16=torch.cuda.get_device_capability(torch.cuda.current_device())[0] >= 8,  # if >= 8 ==> brain float 16 available or set to True if you always want fp32
-    # )
-    # ignore_keys_for_eval=["labels","input_ids"]
-    # trainer = CustomTrainer(
-    #     model=model,
-    #     args=training_args,
-    #     train_dataset=train_data,
-    #     eval_dataset=test_data,
-    #     data_collator=collate_fn,
-    #     preprocess_logits_for_metrics=None,
-    # )
-    # trainer.train(
-    #     ignore_keys_for_eval=ignore_keys_for_eval,
-    # )
-    # # torchrun --nproc-per-node=4 --master-addr="localhost" --master-port=12355 train.py%
+    training_args = TrainingArguments(
+        output_dir="./experiment",
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
+        eval_strategy="steps",
+        save_strategy="steps",
+        save_steps=1000,
+        eval_steps=10,
+        logging_dir="./logs",
+        logging_steps=100,
+        learning_rate=5e-5,
+        weight_decay=0.01,
+        num_train_epochs=100,
+        save_total_limit=1,
+        fp16=False,  # Enable mixed precision training
+        report_to="tensorboard",
+        warmup_steps=500,
+        warmup_ratio=0.03,
+        gradient_accumulation_steps=2,
+        ddp_find_unused_parameters=True,
+        remove_unused_columns=False,
+        gradient_checkpointing=True,  # Enable gradient checkpointing
+        max_grad_norm=1.0,  # Add gradient clipping
+        # bf16=torch.cuda.get_device_capability(torch.cuda.current_device())[0] >= 8,  # if >= 8 ==> brain float 16 available or set to True if you always want fp32
+    )
+    ignore_keys_for_eval=["labels","input_ids"]
+    trainer = CustomTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_data,
+        eval_dataset=test_data,
+        data_collator=collate_fn,
+        preprocess_logits_for_metrics=None,
+    )
+    trainer.train(
+        ignore_keys_for_eval=ignore_keys_for_eval,
+    )
+    # torchrun --nproc-per-node=4 --master-addr="localhost" --master-port=12355 train.py%

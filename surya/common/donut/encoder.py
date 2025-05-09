@@ -1,7 +1,7 @@
 import collections.abc
 import math
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List
 
 import torch
 import torch.utils.checkpoint
@@ -34,7 +34,7 @@ class DonutSwinModelOutput(ModelOutput):
 
 
 # Copied from transformers.models.swin.modeling_swin.window_partition
-def window_partition(input_feature, window_size):
+def window_partition(input_feature, window_size: int):
     """
     Partitions the given input into windows.
     """
@@ -83,61 +83,64 @@ class DonutSwinEmbeddings(nn.Module):
 
         self.norm = nn.LayerNorm(config.embed_dim)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.config = config
 
-    def interpolate_pos_encoding(self, embeddings: torch.Tensor, height: int, width: int) -> torch.Tensor:
-        """
-        This method allows to interpolate the pre-trained position encodings, to be able to use the model on higher
-        resolution images.
+    # def interpolate_pos_encoding(self, embeddings: torch.Tensor, height: int, width: int) -> torch.Tensor:
+    #     """
+    #     This method allows to interpolate the pre-trained position encodings, to be able to use the model on higher
+    #     resolution images.
 
-        Source:
-        https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174
-        """
+    #     Source:
+    #     https://github.com/facebookresearch/dino/blob/de9ee3df6cf39fac952ab558447af1fa1365362a/vision_transformer.py#L174
+    #     """
 
-        num_patches = embeddings.shape[1] - 1
-        num_positions = self.position_embeddings.shape[1] - 1
-        if num_patches == num_positions and height == width:
-            return self.position_embeddings
-        class_pos_embed = self.position_embeddings[:, 0]
-        patch_pos_embed = self.position_embeddings[:, 1:]
-        dim = embeddings.shape[-1]
-        h0 = height // self.config.patch_size
-        w0 = width // self.config.patch_size
-        # we add a small number to avoid floating point error in the interpolation
-        # see discussion at https://github.com/facebookresearch/dino/issues/8
-        h0, w0 = h0 + 0.1, w0 + 0.1
-        patch_pos_embed = patch_pos_embed.reshape(1, int(math.sqrt(num_positions)), int(math.sqrt(num_positions)), dim)
-        patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
-        patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed,
-            scale_factor=(h0 / math.sqrt(num_positions), w0 / math.sqrt(num_positions)),
-            mode="bicubic",
-            align_corners=False,
-        )
-        patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
-        return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
+    #     num_patches = embeddings.shape[1] - 1
+    #     num_positions = self.position_embeddings.shape[1] - 1
+    #     if num_patches == num_positions and height == width:
+    #         return self.position_embeddings
+    #     class_pos_embed = self.position_embeddings[:, 0]
+    #     patch_pos_embed = self.position_embeddings[:, 1:]
+    #     dim = embeddings.shape[-1]
+    #     h0 = height // self.config.patch_size
+    #     w0 = width // self.config.patch_size
+    #     # we add a small number to avoid floating point error in the interpolation
+    #     # see discussion at https://github.com/facebookresearch/dino/issues/8
+    #     h0, w0 = h0 + 0.1, w0 + 0.1
+    #     patch_pos_embed = patch_pos_embed.reshape(1, int(math.sqrt(num_positions)), int(math.sqrt(num_positions)), dim)
+    #     patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
+    #     patch_pos_embed = nn.functional.interpolate(
+    #         patch_pos_embed,
+    #         scale_factor=(h0 / math.sqrt(num_positions), w0 / math.sqrt(num_positions)),
+    #         mode="bicubic",
+    #         align_corners=False,
+    #     )
+    #     patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
+    #     return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
 
     def forward(
         self,
         pixel_values: Optional[torch.FloatTensor],
         bool_masked_pos: Optional[torch.BoolTensor] = None,
         interpolate_pos_encoding: bool = False,
-    ) -> Tuple[torch.Tensor]:
+    ) -> Tuple[torch.Tensor, Tuple[int, int]]:
+        if pixel_values is None:
+            raise ValueError("pixel_values must not be None")
         _, num_channels, height, width = pixel_values.shape
         embeddings, output_dimensions = self.patch_embeddings(pixel_values)
         embeddings = self.norm(embeddings)
         batch_size, seq_len, _ = embeddings.size()
 
-        if bool_masked_pos is not None:
+        if bool_masked_pos is not None and self.mask_token is not None:
             mask_tokens = self.mask_token.expand(batch_size, seq_len, -1)
             # replace the masked visual tokens by mask_tokens
             mask = bool_masked_pos.unsqueeze(-1).type_as(mask_tokens)
             embeddings = embeddings * (1.0 - mask) + mask_tokens * mask
 
         if self.position_embeddings is not None:
-            if interpolate_pos_encoding:
-                embeddings = embeddings + self.interpolate_pos_encoding(embeddings, height, width)
-            else:
-                embeddings = embeddings + self.position_embeddings[:, :seq_len]
+            # if interpolate_pos_encoding:
+            #     embeddings = embeddings + self.interpolate_pos_encoding(embeddings, height, width)
+            # else:
+            embeddings = embeddings + self.position_embeddings[:, :seq_len]
 
         if self.row_embeddings is not None and self.column_embeddings is not None:
             # Repeat the x position embeddings across the y axis like 0, 1, 2, 3, 0, 1, 2, 3, ...
@@ -174,16 +177,25 @@ class DonutSwinPatchEmbeddings(nn.Module):
 
         self.projection = nn.Conv2d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
 
-    def maybe_pad(self, pixel_values, height, width):
+    def maybe_pad(self, pixel_values: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        """
+        Pads the input tensor to make its dimensions divisible by the patch size.
+        """
+        pad_values = [0, 0, 0, 0]  # Default padding values
+
         if width % self.patch_size[1] != 0:
-            pad_values = (0, self.patch_size[1] - width % self.patch_size[1])
-            pixel_values = nn.functional.pad(pixel_values, pad_values)
+            pad_values[1] = self.patch_size[1] - width % self.patch_size[1]
         if height % self.patch_size[0] != 0:
-            pad_values = (0, 0, 0, self.patch_size[0] - height % self.patch_size[0])
-            pixel_values = nn.functional.pad(pixel_values, pad_values)
+            pad_values[3] = self.patch_size[0] - height % self.patch_size[0]
+
+        if pad_values != [0, 0, 0, 0]:
+            pixel_values = torch.nn.functional.pad(pixel_values, (pad_values[0], pad_values[1], pad_values[2], pad_values[3]))
+
         return pixel_values
 
-    def forward(self, pixel_values: Optional[torch.FloatTensor]) -> Tuple[torch.Tensor, Tuple[int]]:
+    def forward(self, pixel_values: Optional[torch.FloatTensor]) -> Tuple[torch.Tensor, Tuple[int, int]]:
+        if pixel_values is None:
+            raise ValueError("pixel_values must not be None")
         _, num_channels, height, width = pixel_values.shape
         # pad the input to be divisible by self.patch_size, if needed
         pixel_values = self.maybe_pad(pixel_values, height, width)
@@ -328,12 +340,12 @@ class DonutSwinSelfAttention(nn.Module):
 
         self.dropout_p = config.attention_probs_dropout_prob
 
-    def transpose_for_scores(self, x):
+    def transpose_for_scores(self, x) -> torch.Tensor:
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def transpose_kv_for_scores(self, x, repeats):
+    def transpose_kv_for_scores(self, x, repeats: int) -> torch.Tensor:
         new_x_shape = x.size()[:-1] + (self.num_kv_heads, self.attention_head_size)
         x = x.view(new_x_shape)
         x = x.repeat(1, 1, repeats, 1) # repeat the values for each key-value head to match query dim
@@ -491,10 +503,10 @@ class DonutSwinLayer(nn.Module):
                 torch.min(torch.tensor(input_resolution)) if torch.jit.is_tracing() else min(input_resolution)
             )
 
-    def get_attn_mask(self, height, width, dtype, device):
+    def get_attn_mask(self, height: int, width: int, dtype: torch.dtype, device: torch.device) -> Optional[torch.Tensor]:
         if self.shift_size > 0:
             # calculate attention mask for SW-MSA
-            img_mask = torch.zeros((1, height, width, 1), dtype=dtype, device=device)
+            img_mask = torch.zeros((1, int(height), int(width), 1), dtype=dtype, device=device)  # Ensure integers
             height_slices = (
                 slice(0, -self.window_size),
                 slice(-self.window_size, -self.shift_size),
@@ -519,10 +531,10 @@ class DonutSwinLayer(nn.Module):
             attn_mask = None
         return attn_mask
 
-    def maybe_pad(self, hidden_states, height, width):
+    def maybe_pad(self, hidden_states: torch.Tensor, height: int, width: int) -> Tuple[torch.Tensor, List[int]]:
         pad_right = (self.window_size - width % self.window_size) % self.window_size
         pad_bottom = (self.window_size - height % self.window_size) % self.window_size
-        pad_values = (0, 0, 0, pad_right, 0, pad_bottom)
+        pad_values = [0, 0, 0, pad_right, 0, pad_bottom]  # Ensure all elements are integers
         hidden_states = nn.functional.pad(hidden_states, pad_values)
         return hidden_states, pad_values
 
@@ -534,10 +546,10 @@ class DonutSwinLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         always_partition: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if not always_partition:
-            self.set_shift_and_window_size(input_dimensions)
-        else:
-            pass
+        # if not always_partition:
+        #     self.set_shift_and_window_size(input_dimensions)
+        # else:
+        #     pass
         height, width = input_dimensions
         batch_size, _, channels = hidden_states.size()
         shortcut = hidden_states
@@ -778,8 +790,8 @@ class DonutSwinEncoder(nn.Module):
             if output_attentions:
                 all_self_attentions += layer_outputs[3:]
 
-        if not return_dict:
-            return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
+        # if not return_dict:
+        #     return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
 
         return DonutSwinEncoderOutput(
             last_hidden_state=hidden_states,

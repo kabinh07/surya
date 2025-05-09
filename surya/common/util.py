@@ -3,6 +3,7 @@ from typing import List
 
 from surya.common.polygon import PolygonBox
 from surya.settings import settings
+import torch
 
 
 def clean_boxes(boxes: List[PolygonBox]) -> List[PolygonBox]:
@@ -63,5 +64,7 @@ else:
 
 
 def mark_step():
+    if torch.jit.is_scripting():
+        return
     if xm is not None:
         xm.mark_step()
