@@ -8,7 +8,7 @@ services:
       - /mnt/data/nid_dataset_ocr:/app/data
       - ./experiment:/app/experiment
       - ./train.py:/app/train.py
-      - ./test.py:/app/test.py
+      - ./converters.py:/app/converters.py
       - ./surya:/app/surya
       - ./test_data:/app/test_data
       - ./models:/app/models
