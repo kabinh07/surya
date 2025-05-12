@@ -5,7 +5,7 @@ import torch
 from surya.common.load import ModelLoader
 from surya.recognition.model.config import SuryaOCRConfig, SuryaOCRDecoderConfig, DonutSwinConfig, SuryaOCRTextEncoderConfig
 from surya.recognition.model.encoderdecoder import OCREncoderDecoderModel
-from surya.recognition.processor import SuryaProcessor
+from surya.recognition.processor import Processor
 from surya.settings import settings
 
 torch.backends.cuda.enable_cudnn_sdp(settings.ENABLE_CUDNN_ATTENTION)
@@ -63,6 +63,6 @@ class RecognitionModelLoader(ModelLoader):
         print(f"Loaded recognition model {self.checkpoint} on device {device} with dtype {dtype}")
         return model
 
-    def processor(self) -> SuryaProcessor:
-        return SuryaProcessor(self.checkpoint)
+    def processor(self) -> Processor:
+        return Processor(self.checkpoint)
 

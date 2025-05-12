@@ -13,7 +13,7 @@ from surya.detection import DetectionPredictor
 from surya.input.processing import convert_if_not_rgb, slice_polys_from_image, slice_bboxes_from_image
 from surya.recognition.loader import RecognitionModelLoader
 from surya.recognition.postprocessing import truncate_repetitions
-from surya.recognition.processor import SuryaProcessor
+from surya.recognition.processor import Processor
 from surya.recognition.util import sort_text_lines
 from surya.recognition.schema import TextLine, OCRResult
 from surya.settings import settings

@@ -13,7 +13,7 @@ import PIL
 from surya.common.s3 import S3DownloaderMixin
 from surya.settings import settings
 
-class SuryaEncoderImageProcessor(S3DownloaderMixin, DonutImageProcessor):
+class EncoderImageProcessor(S3DownloaderMixin, DonutImageProcessor):
     def __init__(self, *args, max_size=None, align_long_axis=False, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -35,14 +35,14 @@ class SuryaEncoderImageProcessor(S3DownloaderMixin, DonutImageProcessor):
 
         if self.do_align_long_axis:
             # Rotate if the bbox is wider than it is tall
-            images = [SuryaEncoderImageProcessor.align_long_axis(image, size=self.max_size, input_data_format=ChannelDimension.LAST) for image in images]
+            images = [EncoderImageProcessor.align_long_axis(image, size=self.max_size, input_data_format=ChannelDimension.LAST) for image in images]
 
             # Verify that the image is wider than it is tall
             for img in images:
                 assert img.shape[1] >= img.shape[0]
 
         # This also applies the right channel dim format, to channel x height x width
-        images = [SuryaEncoderImageProcessor.numpy_resize(img, self.max_size, self.resample) for img in images]
+        images = [EncoderImageProcessor.numpy_resize(img, self.max_size, self.resample) for img in images]
         assert images[0].shape[0] == 3 # RGB input images, channel dim first
 
         # Convert to float32 for rescale/normalize
@@ -52,11 +52,11 @@ class SuryaEncoderImageProcessor(S3DownloaderMixin, DonutImageProcessor):
         # Pad to max size to improve performance
         max_size = self.max_size
         images = [
-            SuryaEncoderImageProcessor.pad_image(
+            EncoderImageProcessor.pad_image(
                 image=image,
                 size=max_size,
                 input_data_format=ChannelDimension.FIRST,
-                pad_value=settings.RECOGNITION_PAD_VALUE
+                pad_value=255
             )
             for image in images
         ]
@@ -66,7 +66,7 @@ class SuryaEncoderImageProcessor(S3DownloaderMixin, DonutImageProcessor):
             images[idx] = (images[idx].astype(np.float64) * self.rescale_factor).astype(np.float32)
 
         images = [
-            SuryaEncoderImageProcessor.normalize(img, mean=self.image_mean, std=self.image_std, input_data_format=ChannelDimension.FIRST)
+            EncoderImageProcessor.normalize(img, mean=self.image_mean, std=self.image_std, input_data_format=ChannelDimension.FIRST)
             for img in images
         ]
 
