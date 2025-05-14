@@ -15,6 +15,7 @@ def get_total_splits(image_size, height):
 
 def split_image(img, height):
     # This will not modify/return the original image - it will either crop, or copy the image
+    print(f"============{type(img)}")
     img_height = list(img.size)[1]
     max_height = settings.DETECTOR_IMAGE_CHUNK_HEIGHT
     if img_height > max_height:

@@ -270,7 +270,7 @@ class RecognitionPredictor(BasePredictor):
                     encoder_attention_mask=None,
                     use_cache=False
                 ).hidden_states
-
+                print(f"================== {settings.RECOGNITION_MAX_TOKENS - 1}")
                 while token_count < settings.RECOGNITION_MAX_TOKENS - 1:
                     is_prefill = token_count == 0
                     # TODO: add attention mask
@@ -314,6 +314,7 @@ class RecognitionPredictor(BasePredictor):
 
             sequence_scores = sequence_scores.cpu()[:current_batch_size]
             batch_predictions = batch_predictions.cpu()[:current_batch_size, 1:] # Remove the start token
+            print(batch_predictions)
             detected_text = self.processor.tokenizer.batch_decode(batch_predictions)
 
             # Convert sequence_scores to list for the current batch
