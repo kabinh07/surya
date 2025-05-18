@@ -680,16 +680,13 @@ class EncoderImageProcessor(DonutImageProcessor):
             image, mean=mean, std=std, data_format=data_format, input_data_format=input_data_format, **kwargs
         )
 
-class RecognizerModel(torch.nn.Module):
-    def __init__(self, encoder, text_encoder, decoder, query_token_count: int, decoder_start_token_id: int, eos_token_id: int):
+class Recognizer(torch.nn.Module):
+    def __init__(self, encoder, text_encoder, decoder, query_token_count: int):
         super().__init__()
         self.encoder = encoder
         self.text_encoder = text_encoder
         self.decoder = decoder
-
         self.query_token_count = query_token_count
-        self.decoder_start_token_id = decoder_start_token_id
-        self.eos_token_id = eos_token_id
 
     def forward(self, pixel_values, decoder_input_ids):
         sequence_scores = torch.zeros(pixel_values.shape[0], dtype=torch.bool, device=pixel_values.device).unsqueeze(1)
@@ -697,48 +694,101 @@ class RecognizerModel(torch.nn.Module):
         batch_predictions = torch.zeros(pixel_values.shape[0], dtype=torch.int64, device=pixel_values.device).unsqueeze(1)
         device_pad_token = torch.tensor(0, device=pixel_values.device)
         decoder_position_ids = torch.ones_like(decoder_input_ids[0, :], dtype=torch.int64).cumsum(0) - 1
+        with torch.no_grad():
+            # 1. Vision Encoder
+            encoder_outputs = self.encoder(pixel_values)
+            encoder_hidden_states = encoder_outputs.last_hidden_state  # [B, N, D]
 
-        # 1. Vision Encoder
-        encoder_outputs = self.encoder(pixel_values=pixel_values)
-        encoder_hidden_states = encoder_outputs.last_hidden_state  # [B, N, D]
+            text_encoder_input_ids = torch.arange(
+                    self.query_token_count,
+                    device=encoder_hidden_states.device,
+                    dtype=torch.long
+                ).unsqueeze(0).expand(encoder_hidden_states.size(0), -1)
 
-        batch_size = encoder_hidden_states.size(0)
-        query_ids = torch.arange(self.query_token_count, device=pixel_values.device).unsqueeze(0).expand(batch_size, -1)
+            batch_size = encoder_hidden_states.size(0)
+            # query_ids = torch.arange(self.query_token_count, device=pixel_values.device).unsqueeze(0).expand(batch_size, -1)
 
-        # 2. Text Encoder
-        text_encoder_outputs = self.text_encoder(
-            input_ids=query_ids,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=torch.ones(encoder_hidden_states.shape[:2], device=pixel_values.device),
-            return_dict=False,
-        )
-        text_hidden_states = text_encoder_outputs[0]
-
-        # 3. Decoder Loop (Fixed Iterations)
-        for _ in range(63):
-            return_dict = self.decoder(
-                input_ids=decoder_input_ids,
-                encoder_hidden_states=text_hidden_states,
-                cache_position=decoder_position_ids
+            # 2. Text Encoder
+            text_encoder_outputs = self.text_encoder(
+                text_encoder_input_ids,
+                None,
+                None, 
+                encoder_hidden_states
             )
-            decoder_position_ids = decoder_position_ids[-1:] + 1
-            logits = return_dict["logits"]
-            preds = torch.argmax(logits[:, -1], dim=-1)
-            scores = torch.max(torch.nn.functional.softmax(logits[:, -1], dim=-1), dim=-1).values.unsqueeze(1)
-            done = (preds == 1) | (preds == 0)
-            all_done = all_done | done
+            text_hidden_states = text_encoder_outputs.hidden_states
 
-            scores = scores.masked_fill(all_done, 0)
-            sequence_scores = torch.cat([sequence_scores, scores], dim=1)
+            print(text_hidden_states)
 
-            decoder_input_ids = preds.unsqueeze(1)
-            decoder_input_ids = torch.where(all_done.unsqueeze(1), device_pad_token, decoder_input_ids)
-            batch_predictions = torch.cat([batch_predictions, decoder_input_ids], dim=1)
+            # 3. Decoder Loop (Fixed Iterations)
+            for _ in range(63):
+                return_dict = self.decoder(
+                    decoder_input_ids,
+                    decoder_position_ids,
+                    None,
+                    text_hidden_states,
+                    None,
+                    False
+                )
+                decoder_position_ids = decoder_position_ids[-1:] + 1
+                logits = return_dict["logits"]
+                preds = torch.argmax(logits[:, -1], dim=-1)
+                scores = torch.max(torch.nn.functional.softmax(logits[:, -1], dim=-1), dim=-1).values.unsqueeze(1)
+                done = (preds == 1) | (preds == 0)
+                all_done = all_done | done
 
-        sequence_scores = torch.sum(sequence_scores, dim=-1) / torch.sum(sequence_scores != 0, dim=-1)
-        sequence_scores = sequence_scores[:batch_size]
+                scores = scores.masked_fill(all_done, 0)
+                sequence_scores = torch.cat([sequence_scores, scores], dim=1)
 
-        return (batch_predictions[:, 1:], sequence_scores)
+                decoder_input_ids = preds.unsqueeze(1)
+                decoder_input_ids = torch.where(all_done.unsqueeze(1), device_pad_token, decoder_input_ids)
+                print(print(f">>>>>>>>>>>>>>>>>>>>> {decoder_input_ids}"))
+                batch_predictions = torch.cat([batch_predictions, decoder_input_ids], dim=1)
+
+            sequence_scores = torch.sum(sequence_scores, dim=-1) / torch.sum(sequence_scores != 0, dim=-1)
+            sequence_scores = sequence_scores[:batch_size]
+
+            return (batch_predictions[:, 1:], sequence_scores)
+
+# class RecognizerEncoder(torch.nn.Module):
+#     def __init__(self, encoder, text_encoder, query_token_count: int):
+#         super().__init__()
+#         self.encoder = encoder
+#         self.text_encoder = text_encoder
+#         self.query_token_count = query_token_count
+
+#     def forward(self, pixel_values):
+#         encoder_outputs = self.encoder(pixel_values=pixel_values)
+#         encoder_hidden_states = encoder_outputs.last_hidden_state  # [B, N, D]
+
+#         batch_size = encoder_hidden_states.size(0)
+#         query_ids = torch.arange(self.query_token_count, device=pixel_values.device).unsqueeze(0).expand(batch_size, -1)
+
+#         text_encoder_outputs = self.text_encoder(
+#             input_ids=query_ids,
+#             encoder_hidden_states=encoder_hidden_states,
+#             encoder_attention_mask=torch.ones(encoder_hidden_states.shape[:2], device=pixel_values.device),
+#             return_dict=False,
+#         )
+#         text_hidden_states = text_encoder_outputs[0]
+
+#         return text_hidden_states
+
+class RecognitionDecoder(torch.nn.Module):
+    def __init__(self, decoder):
+        super().__init__()
+        self.decoder = decoder
+
+    def forward(self, decoder_input_ids, encoder_hidden_states, cache_position):
+        with torch.no_grad():
+            result = decoder(
+                        decoder_input_ids,
+                        cache_position,
+                        None,
+                        encoder_hidden_states,
+                        None,
+                        True
+                    ).logits
+        return result
     
 class DetectionModel(torch.nn.Module):
     def __init__(self, detector):
@@ -771,6 +821,7 @@ if __name__ == '__main__':
     recognizer = RecognitionPredictor()
     detector = DetectionPredictor()
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f">>>>>>>>>>>>>> DEVICE: {device}")
 
     # recognizer_loaded = RecognitionModelLoader("recognition_model")
     # image_processor = recognizer_loaded.processor().image_processor
@@ -815,13 +866,11 @@ if __name__ == '__main__':
     decoder_start_token_id = recognizer.model.config.decoder_start_token_id
     eos_token_id = recognizer.model.config.eos_token_id
 
-    model = RecognizerModel(
+    model = Recognizer(
         encoder=encoder,
-        decoder=decoder,
         text_encoder=text_encoder,
-        query_token_count=query_token_count,
-        decoder_start_token_id=decoder_start_token_id,
-        eos_token_id=eos_token_id
+        decoder = decoder,
+        query_token_count=query_token_count
     )
 
     # # model = torch.jit.load("models/recognizer.pt")
@@ -829,42 +878,113 @@ if __name__ == '__main__':
     image = Image.open("test_data/father_name_dummy.png").convert('RGB')
     pixel_values = image_processor(image).pixel_values
 
-    # output_old = recognizer([image], [['en', 'bn']], det_predictor=detector)
+    output_old = recognizer([image], [['en', 'bn']], det_predictor=detector)
 
 
     # new_pixels = torch.stack([torch.tensor(pixel_values, dtype=torch.float32, device=device).squeeze(0), torch.tensor(pixel_values, dtype=torch.float32, device=device).squeeze(0)])
     # print(new_pixels.shape)
 
-    print("[][]][][][][][][[][][][][][][][][][][][]")
-
     model = model.to(device)
+    model.eval()
     pixel_values = torch.tensor(pixel_values, dtype=torch.float32, device=device)  # Ensure correct dtype and device
     batch_pixels, batch_decoder_input_ids = recognizer.prepare_input([[65555, 65546]], [pixel_values.cpu().squeeze(0)], 1)
     batch_pixels = batch_pixels.to(device)
     batch_decoder_input_ids = batch_decoder_input_ids.to(device)
-    print("@@@@@@@")
-    print(batch_pixels.shape, batch_decoder_input_ids.shape, batch_decoder_input_ids.dtype)
-    # output = model(batch_pixels, batch_decoder_input_ids)
+    # batch_decoder_input_ids = batch_decoder_input_ids.to(device)
+    # print(batch_pixels.shape, batch_decoder_input_ids.shape, batch_decoder_input_ids.dtype)
+    output = model(batch_pixels, batch_decoder_input_ids)
+    print(output)
+    # dummy_decoder_input_ids = batch_decoder_input_ids[0].unsqueeze(0).to(device)
+    # dummy_encoder_hidden_state = output[0].unsqueeze(0).to(device)
+    # decoder_position_ids = torch.ones_like(dummy_decoder_input_ids[0, :], dtype=torch.int64, device = device).cumsum(0) - 1
+    
+    # decoder_model = RecognitionDecoder(
+    #     decoder=decoder
+    # )
+    # decoder_model = decoder_model.to(device)
+    # output = decoder_model(dummy_decoder_input_ids, dummy_encoder_hidden_state, decoder_position_ids)
     # print(output)
-    tokenizer = Byt5LangTokenizer.from_pretrained("models/tokenizer")
+    # print(f"----------------- {dummy_decoder_input_ids.shape, dummy_encoder_hidden_state.shape, decoder_position_ids.shape}")
+    # traced_decoder = torch.jit.trace(decoder_model, (dummy_decoder_input_ids, dummy_encoder_hidden_state, decoder_position_ids,))
+    # traced_decoder.save("models/recognizer_decoder.pt")
+    # tokenizer = Byt5LangTokenizer.from_pretrained("models/tokenizer"), dummy_decoder_input_ids)
     # # recognizer.processor.tokenizer.save_pretrained("models/tokenizer")
     # detected_text = tokenizer.batch_decode(output[0].cpu())
     # print(detected_text)
 
-    model = RecognizerModel(
-        encoder=encoder,
-        decoder=decoder,
-        text_encoder=text_encoder,
-        query_token_count=query_token_count,
-        decoder_start_token_id=decoder_start_token_id,
-        eos_token_id=eos_token_id
-    )
-    model = model.to(device)
-    model.eval()
-    print(f"========{batch_decoder_input_ids.dtype}")
-    dummy_pixels = torch.rand(1, 3, 256, 896, dtype=torch.float32, device=device)
-    dummy_decoder_input_ids = torch.randint(low=0, high=100, size=(1, 63), dtype=torch.long, device=device)
-    print(f"====================={dummy_pixels.shape, dummy_decoder_input_ids.shape, dummy_decoder_input_ids.dtype}")
-    traced_model = torch.jit.trace(model, (dummy_pixels, dummy_decoder_input_ids))
-    traced_model.save("models/recognizer.pt")
+    # model = RecognizerModel(
+    #     encoder=encoder,
+    #     decoder=decoder,
+    #     text_encoder=text_encoder,
+    #     query_token_count=query_token_count,
+    #     decoder_start_token_id=decoder_start_token_id,
+    #     eos_token_id=eos_token_id
+    # )
+    # model = model.to(device)
+    # model.eval()
+    # print(f"========{batch_decoder_input_ids.dtype}")
+    # dummy_pixels = torch.rand(1, 3, 256, 896, dtype=torch.float32, device=device)
+    # dummy_decoder_input_ids = torch.randint(low=0, high=100, size=(1, 63), dtype=torch.long, device=device)
+    # print(f"====================={dummy_pixels.shape, dummy_decoder_input_ids.shape, dummy_decoder_input_ids.dtype}")
+    # dummy_pixels = batch_pixels[0].unsqueeze(0)
+    # print(f"==========={dummy_pixels.shape}")
+    # traced_model = torch.jit.trace(model, dummy_pixels)
+    # traced_model.save("models/recognizer_encoder.pt")
+
+# if __name__ == "__main__":
+#     #test part
+#     recognizer = RecognitionPredictor()
+
+
+#     device = "cuda" if torch.cuda.is_available() else "cpu"
+#     print(f">>>>>>>> DEVICE: {device}")
+#     encoder = torch.jit.load("models/recognizer_encoder.pt", map_location = device)
+#     decoder = torch.jit.load("models/recognizer_decoder.pt", map_location = device)
+#     image_processor = EncoderImageProcessor.from_pretrained("models/image_processor")
+#     tokenizer = Byt5LangTokenizer.from_pretrained("models/tokenizer")
+
+#     #inference
+#     image = Image.open("models/father_name_dummy.png").convert("RGB")
+#     pixel_values = image_processor(image).pixel_values
+#     pixel_values = torch.tensor(pixel_values, dtype=torch.float32, device=device)  # Ensure correct dtype and device
+#     batch_pixels, batch_decoder_input_ids = prepare_input([[65555, 65546]], [pixel_values.cpu().squeeze(0)], 1)
+#     decoder_input_ids = batch_decoder_input_ids.to(device)
+#     sequence_scores = torch.zeros(pixel_values.shape[0], dtype=torch.bool, device=device).unsqueeze(1)
+#     all_done = torch.zeros(pixel_values.shape[0], dtype=torch.bool, device=device)
+#     batch_predictions = torch.zeros(pixel_values.shape[0], dtype=torch.int64, device=device).unsqueeze(1)
+#     device_pad_token = torch.tensor(0, device=device)
+#     decoder_position_ids = torch.ones_like(batch_decoder_input_ids[0, :], dtype=torch.int64, device = device).cumsum(0) - 1
+#     batch_size = batch_pixels.shape[0]
+
+#     # encoder
+#     encoder_hidden_states = encoder(batch_pixels.to(device))
+
+#     # decoder
+#     for _ in range(63):
+#         return_dict = recognizer.model.decoder(decoder_input_ids, decoder_position_ids, None, encoder_hidden_states, None, False).logits
+#         # print(f"========== {decoder_input_ids, decoder_position_ids}")
+#         decoder_position_ids = decoder_position_ids[-1:] + 1
+#         logits = return_dict
+#         print(logits)
+#         preds = torch.argmax(logits[:, -1], dim=-1)
+#         print(f"========== {preds}")
+#         scores = torch.max(torch.nn.functional.softmax(logits[:, -1], dim=-1), dim=-1).values.unsqueeze(1)
+#         done = (preds == 1) | (preds == 0)
+#         all_done = all_done | done
+#         all_done_cpu = all_done.cpu()
+
+#         scores = scores.masked_fill(all_done, 0)
+#         sequence_scores = torch.cat([sequence_scores, scores], dim=1)
+
+#         if all_done_cpu[:batch_size].all():
+#             break
+
+#         decoder_input_ids = preds.unsqueeze(1)
+#         decoder_input_ids = torch.where(all_done.unsqueeze(1), device_pad_token, decoder_input_ids)
+#         batch_predictions = torch.cat([batch_predictions, decoder_input_ids], dim=1)
+
+#     sequence_scores = torch.sum(sequence_scores, dim=-1) / torch.sum(sequence_scores != 0, dim=-1)
+#     sequence_scores = sequence_scores[:batch_size]
+
+#     print(batch_predictions[:, 1:], sequence_scores)
 

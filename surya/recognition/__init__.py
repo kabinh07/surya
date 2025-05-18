@@ -270,10 +270,11 @@ class RecognitionPredictor(BasePredictor):
                     encoder_attention_mask=None,
                     use_cache=False
                 ).hidden_states
-                print(f"================== {settings.RECOGNITION_MAX_TOKENS - 1}")
+                print(f"++++++++++++++++++{encoder_text_hidden_states}")
                 while token_count < settings.RECOGNITION_MAX_TOKENS - 1:
                     is_prefill = token_count == 0
                     # TODO: add attention mask
+                    # print(f">>>>>>>>>>>>>>>>>>>>> {batch_decoder_input}")
                     return_dict = self.model.decoder(
                         input_ids=batch_decoder_input,
                         encoder_hidden_states=encoder_text_hidden_states,
