@@ -11,13 +11,15 @@ services:
       - ./test.py:/app/test.py
       - ./surya:/app/surya
       - ./test_data:/app/test_data
-      - ./models:/app/models
+      - ./:/app
     # command: torchrun --nproc-per-node=4 --master-addr="localhost" --master-port=12355 train.py
     shm_size: 26G
     command: python3 test.py
     runtime: nvidia
     environment:
       - OMP_NUM_THREADS=4
+    ports:
+      - "8522:8501"
     deploy:
       resources:
         reservations:
