@@ -38,11 +38,8 @@ class DetectionPredictor(BasePredictor):
         executor = ThreadPoolExecutor if parallelize else FakeExecutor
         with executor(max_workers=max_workers) as e:
             for preds, orig_sizes in detection_generator:
-                print(f"%%%%%%%%%%%%%%%%% {len(preds), orig_sizes}")
                 for pred, orig_size in zip(preds, orig_sizes):
-                    print(f"================={(pred), orig_size}")
                     postprocessing_futures.append(e.submit(parallel_get_boxes, pred, orig_size, include_maps))
-        print(f"-----------------{postprocessing_futures[0].result()}")
         return [future.result() for future in postprocessing_futures]
 
     def prepare_image(self, img):
@@ -147,7 +144,6 @@ class InlineDetectionPredictor(DetectionPredictor):
 
     def __call__(self, images, text_boxes: List[List[List[float]]], batch_size=None, include_maps=False) -> List[TextDetectionResult]:
         detection_generator = self.batch_detection(images, batch_size=batch_size, static_cache=settings.DETECTOR_STATIC_CACHE)
-        print(f"***************** {detection_generator}")
         text_box_generator = self.batch_generator(text_boxes, batch_size=batch_size)
 
         postprocessing_futures = []

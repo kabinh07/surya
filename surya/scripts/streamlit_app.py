@@ -1,7 +1,9 @@
 import io
 import tempfile
 from typing import List
-
+import sys
+import os
+sys.path.append("/app")
 import pypdfium2
 import streamlit as st
 

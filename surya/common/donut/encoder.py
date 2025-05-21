@@ -393,6 +393,7 @@ class DonutSwinSelfAttention(nn.Module):
         mark_step()
 
         attn_output = attn_output.transpose(1, 2).contiguous()
+        # print(f">>>>>>>>>>>>>>>>> Batch size: {batch_size} | Dimension: {dim} | Channels: {num_channels}")
         attn_output = attn_output.view(batch_size, dim, num_channels)
 
         outputs = (attn_output,)
