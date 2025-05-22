@@ -172,3 +172,4 @@ cython_debug/
 .idea/
 recognition_model/
 models/*
+test_data/*

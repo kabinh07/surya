@@ -18,17 +18,17 @@ services:
       - ./entry.sh:/app/entry.sh
     ports: 
       - "8522:8501"
-    command: ./entry.sh
+    # command: ./entry.sh
     shm_size: 26G
-    # command: bash
-    # stdin_open: true
+    command: bash
+    stdin_open: true
     runtime: nvidia
     environment:
       - OMP_NUM_THREADS=4
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
 
 
